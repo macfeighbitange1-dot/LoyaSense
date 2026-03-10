@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pkl
+.env
+data/raw_transactions.csv
+data/member_features.csv
+data/top_50_loyalty_list.csv
