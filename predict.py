@@ -22,8 +22,17 @@ def generate_loyalty_list():
         print(f"❌ Error: No data file found to analyze.")
         return
 
+    # Loading the model
     model = joblib.load(model_path)
-    data = pd.read_csv(input_path)
+
+    # LOAD DATA WITH ENCODING FALLBACK (The Genius Fix)
+    try:
+        # Try standard UTF-8 first (standard for most modern systems)
+        data = pd.read_csv(input_path, encoding='utf-8')
+    except UnicodeDecodeError:
+        # Fallback for Excel-style CSVs or files with special currency/regional characters
+        print("⚠️ UTF-8 Decode failed, trying latin1 encoding fallback...")
+        data = pd.read_csv(input_path, encoding='latin1')
 
     # 3. FEATURE PREPARATION
     # Ensure columns match what the model was trained on
