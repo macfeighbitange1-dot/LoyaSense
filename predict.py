@@ -3,92 +3,76 @@ import joblib
 import os
 
 def generate_loyalty_list():
-    # 1. PATH CONFIGURATION
-    # We prioritize 'raw_input.csv' (from the upload portal)
     input_path = 'data/raw_input.csv'
     if not os.path.exists(input_path):
-        # Fallback to default features if no upload exists
         input_path = 'data/member_features.csv'
 
     model_path = 'models/churn_model.pkl'
     output_path = 'data/top_50_loyalty_list.csv'
 
-    # 2. LOAD MODEL AND DATA
-    if not os.path.exists(model_path):
-        print(f"❌ Error: Model not found at {model_path}.")
+    if not os.path.exists(model_path) or not os.path.exists(input_path):
+        print("❌ Essential files missing.")
         return
 
-    if not os.path.exists(input_path):
-        print(f"❌ Error: No data file found to analyze.")
-        return
-
-    # Loading the model
     model = joblib.load(model_path)
 
-    # LOAD DATA WITH FORGIVING PARSING (The Ironclad Fix)
+    # 1. LOAD DATA WITH MAX FORGIVENESS
     try:
-        # We add 'on_bad_lines' to skip broken rows and 'quoting' to handle messy text fields
-        data = pd.read_csv(
-            input_path, 
-            sep=None, 
-            engine='python', 
-            encoding='utf-8', 
-            on_bad_lines='skip',
-            quoting=0 # Handles the "expected after" error by being flexible with quotes
-        )
+        data = pd.read_csv(input_path, sep=None, engine='python', encoding='utf-8', on_bad_lines='skip', quoting=0)
     except Exception:
-        try:
-            print("⚠️ UTF-8 failed, trying latin1 with forgiving parsing...")
-            data = pd.read_csv(
-                input_path, 
-                sep=None, 
-                engine='python', 
-                encoding='latin1', 
-                on_bad_lines='skip',
-                quoting=0
-            )
-        except Exception as e:
-            print(f"❌ Critical Data Load Error: {e}")
-            return
+        data = pd.read_csv(input_path, sep=None, engine='python', encoding='latin1', on_bad_lines='skip', quoting=0)
 
-    # 3. FEATURE PREPARATION
-    # Ensure columns match what the model was trained on
-    required_cols = ['deposit', 'withdrawal', 'engagement_score']
+    # 2. FUZZY COLUMN MATCHING (The "Once and For All" Fix)
+    # Convert all columns to lowercase and remove spaces for matching
+    data.columns = [c.lower().replace(' ', '_').strip() for c in data.columns]
+
+    # Map of what we need : common variations found in SACCO data
+    mapping = {
+        'member_id': ['member_id', 'id', 'account_no', 'member_no', 'client_id'],
+        'deposit': ['deposit', 'deposits', 'savings', 'total_deposit'],
+        'withdrawal': ['withdrawal', 'withdrawals', 'total_withdrawal'],
+        'engagement_score': ['engagement_score', 'score', 'activity_level']
+    }
+
+    for target, variations in mapping.items():
+        if target not in data.columns:
+            # Check if any variation exists in the uploaded file
+            found = False
+            for v in variations:
+                if v in data.columns:
+                    data.rename(columns={v: target}, inplace=True)
+                    found = True
+                    break
+            
+            if not found:
+                print(f"⚠️ Column '{target}' missing. generating defaults...")
+                if target == 'member_id':
+                    data['member_id'] = range(1000, 1000 + len(data))
+                else:
+                    data[target] = 0
+
+    # 3. PREDICT
+    features = data[['deposit', 'withdrawal', 'engagement_score']]
     
-    # Simple check: if columns are missing, we can't predict
-    for col in required_cols:
-        if col not in data.columns:
-            print(f"⚠️ Warning: Missing column '{col}'. Filling with 0.")
-            data[col] = 0
-
-    features = data[required_cols]
-
-    # 4. PREDICT PROBABILITIES
     if len(model.classes_) > 1:
-        # Index 1 is usually the probability of 'True' (Churn)
         probabilities = model.predict_proba(features)[:, 1]
     else:
-        print("⚠️ Warning: Model only knows one class. Setting prob to 0.")
         probabilities = [0.0] * len(data)
 
-    # 5. ATTACH AND RANK
     data['churn_probability'] = probabilities
     
-    # Sort: Highest Churn Risk first, then Lowest Engagement
-    hit_list = data.sort_values(
-        by=['churn_probability', 'engagement_score'], 
-        ascending=[False, True]
-    ).head(50)
-
-    # 6. SAVE ACTIONABLE LIST
-    # Ensure 'is_flagged' exists for the CSV output
+    # 4. RANK AND FLAG
+    hit_list = data.sort_values(by=['churn_probability', 'engagement_score'], ascending=[False, True]).head(50)
+    
     if 'is_flagged' not in hit_list.columns:
         hit_list['is_flagged'] = hit_list['churn_probability'] > 0.5
 
-    hit_list[['member_id', 'churn_probability', 'engagement_score', 'is_flagged']].to_csv(output_path, index=False)
+    # 5. FINAL EXPORT (Safeguarded)
+    # We ensure these 4 columns exist before slicing
+    final_cols = ['member_id', 'churn_probability', 'engagement_score', 'is_flagged']
+    hit_list[final_cols].to_csv(output_path, index=False)
     
-    print(f"🚀 Success! Agentic list generated from: {input_path}")
-    print(f"📍 Action plan saved to: {output_path}")
+    print(f"🚀 Deployment Success: {output_path} generated.")
 
 if __name__ == "__main__":
     generate_loyalty_list()
