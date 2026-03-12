@@ -48,14 +48,27 @@ def get_ai_recommendation(member_id, prob, score):
         return f"Hello Member {member_id}, we have a special Loyalty Loan discount for you!"
 
 def run_analysis():
-    """Processes data with a 100% Dark Theme injection."""
+    """Processes data with a 100% Dark Theme injection and graceful error handling."""
     file_path = 'data/top_50_loyalty_list.csv'
+    raw_input_path = 'data/raw_input.csv'
     
+    # --- PRE-FLIGHT CHECK ---
     if not os.path.exists(file_path):
-        try:
-            subprocess.run(["python", "predict.py"], check=True)
-        except Exception as e:
-            return f"<p style='color:#ff4d4d;'>System Error: {e}</p>"
+        # Attempt to auto-generate if input exists
+        if os.path.exists(raw_input_path) or os.path.exists('data/member_features.csv'):
+            try:
+                subprocess.run(["python", "predict.py"], check=True)
+            except Exception as e:
+                return f"<div class='alert' style='background:#7f1d1d; color:white;'>System Sync Error: {e}</div>"
+        else:
+            # High-end empty state for new users/deployments
+            return """
+            <div class="text-center py-5" style="border: 1px dashed #1e293b; border-radius: 15px; background: rgba(34, 211, 238, 0.02); margin-top: 20px;">
+                <i class="fas fa-database mb-3 text-muted" style="font-size: 2.5rem; opacity: 0.3;"></i>
+                <h5 class="text-white fw-bold">Neural Engine Offline</h5>
+                <p class="text-muted small">Please upload member transaction logs to initiate the intelligence layer.</p>
+            </div>
+            """
 
     try:
         df = pd.read_csv(file_path)
